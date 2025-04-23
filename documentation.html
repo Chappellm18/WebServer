@@ -1,11 +1,26 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Documentation</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
-<body>
-	<h1>Testing</h1>
+<body class="bg-gray-100 text-center py-20">
+	<h1 class="mb-8 text-3x1 font-bold underline">Testing</h1>
+
+	<div class="flex mr-6 ml-6">
+		<div class="w-14 flex-none">
+			GET
+		</div>
+
+		<div class="w-32 flex-1">
+			{BASE_URL}/
+		</div>
+
+		<div class="w-64 flex-1">
+			Base endpoint to display documentation
+		</div>
+	</div>
 </body>
 </html>
