@@ -8,10 +8,25 @@ import (
 	"log"
 	"net/http"
 	//"strconv"
+	"html/template"
+	"path/filepath"
 	"sync"
 	//"runtime"
 	"strings"
+	"time"
+	"strconv"
 )
+
+type MemInfo struct {
+    Total       uint64
+    Available   uint64
+    Used        uint64
+    UsedPercent float64
+}
+
+type CPUInfo struct {
+    Usage float64
+}
 
 type Post struct {
 	ID int `json:"id"`
@@ -24,6 +39,18 @@ type Board struct {
     Version  string `json:"version,omitempty"`
     Serial   string `json:"serial,omitempty"`
     AssetTag string `json:"assettag,omitempty"`
+}
+
+type Route struct {
+    Method      string
+    Path        string
+    Description string
+}
+
+type PageData struct {
+    Title   string
+    Heading string
+    Routes  []Route
 }
 
 var posts []string
@@ -44,53 +71,79 @@ func main() {
 }
 
 // Read HTML to serve
-func readHTML(filename string) []byte {
+func renderTemplate(w http.ResponseWriter, filename string, data interface{}) {
 	docContentMu.Lock()
 	defer docContentMu.Unlock()
 
-	tempContent, err := ioutil.ReadFile("templates/" + filename)
-	if err != nil { log.Fatal(err) }
-	return tempContent
+	// Safely build full path
+	path := filepath.Join("templates", filename)
+
+	// Parse the template file
+	tmpl, err := template.ParseFiles(path)
+	if err != nil {
+		log.Printf("error parsing template: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Execute the template with provided data
+	err = tmpl.Execute(w, data)
+	if err != nil {
+		log.Printf("error executing template: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 // Default Route
 func activeHandler(w http.ResponseWriter, r *http.Request) {	
-	docContent = readHTML("documention.html")
-	
-	w.Header().Set("Content-Type", "text/html")
-	w.Write(docContent) 
+	data := PageData{
+		Title:   "API Docs",
+		Heading: "System Information API Docs",
+		Routes: []Route{
+			{"GET", "/", "Documentation endpoint"},
+			{"GET", "/mem", "System memeory information"},
+			{"GET", "/cpu", "System CPU information"},
+			{"GET", "/hardware", "System hardware information"},
+		},
+	}
+	renderTemplate(w, "documentation.html", data)
 }
 
 // CPU Usage Route
 func cpuUsageHandler(w http.ResponseWriter, r *http.Request) {
-	docContent = readHTML("cpu.html")
-	
-	w.Header().Set("Content-Type", "text/html")
-	w.Write(docContent)
+    info, err := cpuInfo()
+    if err != nil {
+        fmt.Println("Error getting CPU info:", err)
+        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+        return
+    }
+    renderTemplate(w, "cpu.html", info)
 }
 
 // MEM Usage Route
 func memUsageHandler(w http.ResponseWriter, r *http.Request) {
-	docContent = readHTML("mem.html")
-
-	w.Header().Set("Content-Type", "text/html")
-	w.Write(docContent)
+    info, err := memInfo()
+    if err != nil {
+        fmt.Println("Error getting memory info:", err)
+        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+        return
+    }
+    renderTemplate(w, "mem.html", info)
 }
 
 // Hardware Route
 func hardwareHandler(w http.ResponseWriter, r *http.Request) {
-	hardwareInfo, err := boardInfo()
-	if err != nil {
-        	fmt.Println("Error getting board info:", err)
-        	return
-    	}
-	
-    	fmt.Printf("Full Board struct: %+v\n", hardwareInfo)
+    hardwareInfo, err := boardInfo()
+    if err != nil {
+        fmt.Println("Error getting board info:", err)
+        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+        return
+    }
 
-	docContent = readHTML("cpu.html")
+    fmt.Printf("Full Board struct: %+v\n", hardwareInfo)
 
-	w.Header().Set("Content-Type", "text/html")
-	w.Write(docContent)
+    renderTemplate(w, "hardware.html", hardwareInfo) 
 }
+
 
 func boardInfo() (Board, error) {
     var b Board
@@ -122,10 +175,92 @@ func slurpFile(path string) (string, error) {
     return strings.TrimSpace(string(data)), nil
 }
 
+func cpuInfo() (CPUInfo, error) {
+    idle0, total0, err := readCPUTimes()
+    if err != nil {
+        return CPUInfo{}, err
+    }
+
+    time.Sleep(1 * time.Second)
+
+    idle1, total1, err := readCPUTimes()
+    if err != nil {
+        return CPUInfo{}, err
+    }
+
+    idleDelta := idle1 - idle0
+    totalDelta := total1 - total0
+
+    usage := 100.0 * (1.0 - float64(idleDelta)/float64(totalDelta))
+    return CPUInfo{Usage: usage}, nil
+}
+
+func readCPUTimes() (idle, total uint64, err error) {
+    data, err := ioutil.ReadFile("/proc/stat")
+    if err != nil {
+        return
+    }
+
+    lines := strings.Split(string(data), "\n")
+    for _, line := range lines {
+        if strings.HasPrefix(line, "cpu ") {
+            fields := strings.Fields(line)
+            var values []uint64
+            for _, field := range fields[1:] {
+                v, err := strconv.ParseUint(field, 10, 64)
+                if err != nil {
+                    return 0, 0, err
+                }
+                values = append(values, v)
+            }
+
+            idle = values[3] // idle
+            for _, val := range values {
+                total += val
+            }
+            return
+        }
+    }
+
+    return 0, 0, fmt.Errorf("cpu line not found in /proc/stat")
+}
 
 
 
+func memInfo() (MemInfo, error) {
+    data, err := ioutil.ReadFile("/proc/meminfo")
+    if err != nil {
+        return MemInfo{}, err
+    }
 
+    lines := strings.Split(string(data), "\n")
+    mem := make(map[string]uint64)
+
+    for _, line := range lines {
+        fields := strings.Fields(line)
+        if len(fields) < 2 {
+            continue
+        }
+        key := strings.TrimSuffix(fields[0], ":")
+        value, err := strconv.ParseUint(fields[1], 10, 64)
+        if err != nil {
+            continue
+        }
+        mem[key] = value // in KB
+    }
+
+    total := mem["MemTotal"]
+    available := mem["MemAvailable"]
+    used := total - available
+    usedPercent := float64(used) / float64(total) * 100
+
+    return MemInfo{
+        Total:       total * 1024,    // convert to bytes
+        Available:   available * 1024,
+        Used:        used * 1024,
+        UsedPercent: usedPercent,
+    }, nil
+}
 
 
 

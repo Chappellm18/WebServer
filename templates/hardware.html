@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hardware Info</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-white py-10">
+  <div class="max-w-3xl mx-auto px-4">
+    <h1 class="text-3xl font-bold mb-8 text-center underline">Board Information</h1>
+
+    <div class="bg-white dark:bg-gray-800 shadow rounded-xl p-6 space-y-4">
+      <div class="flex justify-between">
+        <span class="font-semibold">Name:</span>
+        <span>{{ .Name }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="font-semibold">Vendor:</span>
+        <span>{{ .Vendor }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="font-semibold">Version:</span>
+        <span>{{ .Version }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="font-semibold">Serial:</span>
+        <span>{{ .Serial }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="font-semibold">Asset Tag:</span>
+        <span>{{ .AssetTag }}</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
